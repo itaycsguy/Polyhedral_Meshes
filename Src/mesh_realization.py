@@ -4,13 +4,47 @@ import numpy as np
 import random
 from bpy.props import FloatProperty
 
+REMOVE_MODE = True
+REMOVE_ALL = False
+REMOVE_OUTTER_COLLECTIONS = False
+CONDITIONAL_REMOVAL = ['Cube']
+
 bl_info = {
     "name": "Mesh Realization",
     "blender": (2, 80, 0),
-    "category": "Object",
+    "category": "Object",	
 }
 
 class Blender_Adapter:	
+	
+	@staticmethod
+	def remove_handler(remove_all, conditional_removal, remove_outter_collections):		
+		if remove_all:
+			for c in bpy.data.collections:
+				for o in c.objects:
+					bpy.data.objects.remove(o)
+					
+		elif remove_outter_collections:
+			for o in bpy.context.scene.objects:
+				bpy.data.objects.remove(o)
+					
+		else:
+			for c in bpy.data.collections:
+				collection_name = Blender_Adapter.get_obj_name(c)
+				for o in c.objects:
+					obj_name = Blender_Adapter.get_obj_name(o)
+					if collection_name in conditional_removal:
+						break
+					elif obj_name == collection_name:	
+						obj_shape_keys = o.data.shape_keys
+						if obj_shape_keys is not None:
+							for k in obj_shape_keys.key_blocks:
+								k.value = .0
+								o.shape_key_remove(k)
+					else:
+						bpy.data.objects.remove(o)
+		
+	
 	
 	'''
 	.	Selecting an object.
@@ -114,6 +148,21 @@ class Blender_Adapter:
 	
 	
 	'''
+	.	Retrieve maximum face dimension.
+	.	input: faces
+	.	output: maximum dimension
+	'''
+	@staticmethod
+	def get_max_faces_dim(faces):
+		max_fdim = 0
+		for f in faces:
+			fdim = len(faces)
+			if fdim > max_fdim:
+				max_fdim = fdim
+		return max_fdim
+	
+	
+	'''
 	.	Retrieve object vertex index.
 	.	input: vertex.
 	.	output: index.
@@ -181,7 +230,7 @@ class Blender_Adapter:
 	.	input: active object, a list of all eigen shapes.
 	'''
 	@staticmethod	
-	def add_basis_shape_key(obj, ref_shapes, min_glob_sliders=.0, max_glob_sliders=1000.):
+	def add_basis_shape_key(obj, ref_shapes, min_glob_sliders=.0, max_glob_sliders=10.):
 		sk = obj.shape_key_add(name=Blender_Adapter.get_obj_name(obj))
 		sk.interpolation = 'KEY_LINEAR'
 		obj.data.shape_keys.use_relative = True
@@ -203,11 +252,9 @@ class Blender_Adapter:
 	.	input: active object, a list of all eigen shapes.
 	'''
 	@staticmethod	
-	def add_keyframes(basis_obj_name, ref_ptrn, frames=250, sigma=15.):
-		def _get_gauss_smooth_value(i, size, frame, sigma):
-			# value = np.exp(-((frame * (size / frames) - i)**2) / ((2 * sigma)**2))
-			# value = np.exp(-(frame * (size / frames) - i) / sigma)
-			value = (1 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-((frame * (size / frames) - i)**2) / ((2 * sigma)**2))
+	def add_keyframes(basis_obj_name, ref_ptrn, frames=250):
+		def _get_gauss_smooth_value(i, frame, frames):
+			value = np.exp(-(frame * (ssize / frames) - i)**2)
 			return value
 		
 		def _sorted_by_name(key_blocks):
@@ -224,7 +271,7 @@ class Blender_Adapter:
 					## already sorted running from high freqs. to low freqs.
 					kb = kb[1]
 					if ref_ptrn in kb.name and kb.name != basis_obj_name:
-						kb.value = _get_gauss_smooth_value(i, len(key_blocks), frame, sigma)
+						kb.value = _get_gauss_smooth_value(i, frame, frames / 2)
 						kb.keyframe_insert("value", frame=frame)
 			
 		
@@ -252,24 +299,21 @@ class OBJECT_OT_realization(bpy.types.Operator):
 	.	output: V, F, C, types, ids
 	'''
 	def _preprocessing(self, obj):
+		## makes sure an access to the correct color name
 		def _get_corrected_color_name(target_name, class_colors):
 			for color in class_colors:
 				if color in target_name:
 					return color
 
-		def _get_uniform_face_vertices(F):
-			min = len(F[0])
+		## fix the face dimensionality by duplicate the last face vertex (max_fdim - curr_fdim) times
+		def _get_corrected_face_vertices_dim(F):
+			max_fdim = Blender_Adapter.get_max_faces_dim(F)
 			for i in range(len(F)):
-				Sf = len(F[i])
-				if Sf < min:
-					min = Sf
-					
-			F_uniform = list()
-			for i in range(len(F)):
-				Sf = len(F[i])
-				if Sf == min:
-					F_uniform.append(F[i])
-			return F_uniform
+				curr_fdim = len(F[i])
+				if curr_fdim < max_fdim:
+					F[i] = np.concatenate(tuple([F[i], F[i][curr_fdim - 1] * np.ones(max_fdim - curr_fdim)]), axis=0)
+			
+			return F
 		
 
 		V, F, C = {}, list(), list()
@@ -292,7 +336,7 @@ class OBJECT_OT_realization(bpy.types.Operator):
 			V_arr[vi] = vv
 		V = V_arr
 		V = np.array(V, order='F', copy=True, dtype=np.float64)
-		F = np.array(_get_uniform_face_vertices(F), order='F', copy=True, dtype=np.int32)
+		F = np.array(_get_corrected_face_vertices_dim(F), order='F', copy=True, dtype=np.int32)
 		C = np.array(C, order='F', copy=True, dtype=np.int32)
 
 		TYPES, IDS = list(), list()
@@ -339,8 +383,8 @@ class OBJECT_OT_realization(bpy.types.Operator):
 		for i, v_new in enumerate(Vco_news):
 			if i == 2:
 				## DEBUG
-				#pass
-				break
+				pass
+				#break
 			
 			shape_name = '{}_{}_{}'.format(basis_obj_name, self.PRODUCED_SHAPE_NAME, i + 1)
 			eigen_shape = Blender_Adapter.gen_object(shape_name, obj.data.copy(), ref_obj=obj, x_gap=x_gap, y_gap=y_gap, z_gap=z_gap)
@@ -362,21 +406,25 @@ class OBJECT_OT_realization(bpy.types.Operator):
 	.	Operator Add-on execution entry-point.
 	'''
 	def execute(self, context):
-		obj = Blender_Adapter.get_active_obj()
-		assert Blender_Adapter.get_mode(obj) == 'OBJECT', 'OBJECT mode is required.'
-		
-		Blender_Adapter.select_obj(obj, True)
-		V, F, C, TYPES, IDS = self._preprocessing(obj)
-
-		import planarization as plnr
-		if plnr.is_planar_shape(V, F):
-			print('{} is planar.'.format(obj.name))
+		if REMOVE_MODE:
+			print('Data Cleaner is running...')
+			Blender_Adapter.remove_handler(REMOVE_ALL, CONDITIONAL_REMOVAL, REMOVE_OUTTER_COLLECTIONS)
 		else:
-			pass
-			#assert False, '{} is not planar.'.format(obj.name)
+			obj = Blender_Adapter.get_active_obj()
+			assert Blender_Adapter.get_mode(obj) == 'OBJECT', 'OBJECT mode is required.'
 			
-		Vco_news = self._parse_vertices(plnr.realization(V, F, C, TYPES, IDS))
-		self._gen_PM_shapes(obj, Vco_news)
+			Blender_Adapter.select_obj(obj, True)
+			V, F, C, TYPES, IDS = self._preprocessing(obj)
+
+			import planarization as plnr
+			if plnr.is_planar_shape(V, F):
+				print('{} is planar.'.format(obj.name))
+			else:
+				pass
+				#assert False, '{} is not planar.'.format(obj.name)
+				
+			Vco_news = self._parse_vertices(plnr.realization(V, F, C, TYPES, IDS))
+			self._gen_PM_shapes(obj, Vco_news)
 
 		return {'FINISHED'}
 
@@ -389,4 +437,4 @@ def unregister():
 		
  
 if __name__ == "__main__":
-    register()
+	register()
