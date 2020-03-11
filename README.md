@@ -8,9 +8,16 @@ Given a Polyhedral-Mesh, deform its vertices by reserving the Mesh-Planarity pro
 [![Simple Polyhendral Mesh](https://github.com/itaycsguy/Polyhedral_Meshes/blob/master/Doc/simple_3D_cube.png)]
 
 # Installation
-1. Download blender v2.81 or download configured blender v2.81 from 
-2. git clone to another directory
-3. cd Polyhedral_Meshes
-4. Copy planarization.pyd to blender DLLs directory
-5. unzip mesh_realization.zip
+## Option 1
+1. Download configured blender v2.81 from 
+2. Make git clone to another directory
+3. Unzip mesh_realization.zip
+4. Open mesh_realization.blend
+
+## Option 2
+1. Download blender v2.81
+2. Make git clone to another directory
+3. Copy planarization.pyd to the blender DLLs directory
+4. cd Polyhedral_Meshes
+5. Unzip mesh_realization.zip
 6. Open mesh_realization.blend
