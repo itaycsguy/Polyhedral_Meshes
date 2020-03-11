@@ -9,7 +9,7 @@ Given a Polyhedral-Mesh, deform its vertices by reserving the Mesh-Planarity pro
 
 # Installation
 ## Option 1
-1. Download configured blender v2.81 from 
+1. Download configured blender v2.81 from here: [Blender v2.81][Arbitrary case-insensitive reference text]
 2. Make git clone to another directory
 3. Unzip mesh_realization.zip
 4. Open mesh_realization.blend
