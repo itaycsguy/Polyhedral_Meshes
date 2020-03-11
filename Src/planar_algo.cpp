@@ -1,7 +1,9 @@
 /*
-.	Names:		Dr. Roi Porrane & Mr. Itay Guy
-.	Purpose:	All examples i propose here have taken from libigl.
-.	Date:		30/11/2019
+.	Names:			Dr. Roi Porrane & Mr. Itay Guy
+.	Artical:		"On Linear Spaces of Polyhedral Meshes"
+.	Artical-Link:	https://inf.ethz.ch/personal/poranner/papers/linearPM.pdf
+.	Date:			04/09/2019
+.	Version:		1.3
 */
 
 #include <pybind11/pybind11.h>
@@ -12,6 +14,7 @@ namespace py = pybind11;
 #include <igl/cotmatrix.h>
 #include <igl/per_face_normals.h>
 #include <assert.h> 
+#define assertm(exp, msg) assert(((void)msg, exp))
 
 #define AFFINE		"affine"
 #define PARALLEL	"parallel"
@@ -19,16 +22,9 @@ namespace py = pybind11;
 
 class Utils {
 public:
-
-	static void from_vectorization(const Eigen::VectorXd& x, Eigen::MatrixXd& Y, int vec_size) {
-		Y.resize(vec_size, x.size() / vec_size);
-		Y.setZero();
-
-		for (int i = 0; i < x.size();i+=vec_size) {
-			Y.block(0, i, vec_size, 1) = x.block(i, 0, vec_size, 1);
-		}
-	}
-
+	/*
+	.	Generating the Face-Specific-Coordinates as a matrix.
+	*/
 	static void face_coordinates_matrix(const Eigen::MatrixXd& V_, const Eigen::VectorXi& F_, Eigen::MatrixXd& Z) {
 		Z.resize(V_.cols(), F_.size());
 		Z.setZero();
@@ -41,6 +37,9 @@ public:
 		}
 	}
 
+	/*
+	.	Generating Normal-Per-Face and changing it to Homogenous-Coordinates.
+	*/
 	static void normal_per_face_matrix(const Eigen::MatrixXd& V_, const Eigen::MatrixXi& F_, Eigen::MatrixXd& M) {
 		igl::per_face_normals(V_, F_, M);
 
@@ -49,6 +48,9 @@ public:
 		}
 	}
 
+	/*
+	.	Generating Centering-Matrix: J = I - (1 / n)*E.
+	*/
 	static void centering_matrix(Eigen::MatrixXd& J, int num_vertices) {
 		Eigen::MatrixXd I, E;
 		I.resize(num_vertices, num_vertices);
@@ -59,6 +61,9 @@ public:
 		J = I - (1.0f / num_vertices) * E;
 	}
 
+	/*
+	.	Operating Pseudo-Inverse using svd technique.
+	*/
 	static void pseudo_inverse(const Eigen::MatrixXd& x, Eigen::MatrixXd& y) {
 		Eigen::JacobiSVD<Eigen::MatrixXd> svd(x, Eigen::ComputeThinU | Eigen::ComputeThinV);
 		Eigen::MatrixXd singular_diag(svd.singularValues().asDiagonal());
@@ -72,6 +77,9 @@ public:
 		y = svd.matrixU() * singular_diag * svd.matrixV().transpose();
 	}
 
+	/*
+	.	Operating Kronecker-Product between A and B.
+	*/
 	static void kronecker_product(const Eigen::MatrixXd& A, const Eigen::MatrixXd& B, Eigen::MatrixXd& kronecker_mat) {
 		int gap_rows = B.rows(), gap_cols = B.cols();
 		int rows = A.rows(), cols = A.cols();
@@ -84,11 +92,17 @@ public:
 		}
 	}
 
+	/*
+	.	Computing Eigen-Vectors of x.
+	*/
 	static void eigenvectors(const Eigen::MatrixXd& x, Eigen::MatrixXd& y) {
 		Eigen::JacobiSVD<Eigen::MatrixXd> svd(x, Eigen::ComputeThinU | Eigen::ComputeThinV);
 		y = svd.matrixV();
 	}
 
+	/*
+	.	Computing Degree-Matrix of V, F.
+	*/
 	static void degree_matrix(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& D) {
 		D.resize(V.rows(), V.rows());
 		D.setZero();
@@ -120,6 +134,9 @@ public:
 		}
 	}
 
+	/*
+	.	Computing Adjacency-Matrix of V, F.
+	*/
 	static void adjacency_matrix(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& A) {
 		A.resize(V.rows(), V.rows());
 		A.setZero();
@@ -147,6 +164,9 @@ public:
 		}
 	}
 
+	/*
+	.	Computing Laplacian-Matrix using Degree-Matrix, Adjacency-Matrix.
+	*/
 	static void laplacian_matrix(const Eigen::MatrixXd& D, const Eigen::MatrixXd& A, Eigen::MatrixXd& L, int dim) {
 		Eigen::MatrixXd laplacian(D - A);
 		L.resize(laplacian.rows() * dim, laplacian.cols() * dim);
@@ -160,24 +180,26 @@ public:
 	}
 };
 
-
+/*
+.	Class contained all face cases that is expected by the algorithm.
+*/
 class PM_Cases {
-public:
-	int _affine, _parallel, _vertical;
+	int _affine, _parallel, _vertical; // Future-TODO: vertical case.
 
+public:
 	PM_Cases(const std::vector<std::string>& types, const Eigen::VectorXi& ids) : _affine(-1), _parallel(-1), _vertical(-1) {
-		assert(types.size() > 0 && ids.size() > 0);
-		assert(types.size() == ids.size());
+		assertm(types.size() > 0 && ids.size() > 0, "Faces types and faces ids are required.");
+		assertm(types.size() == ids.size(), "Faces types amount should be equal to faces ids amount.");
 		for (int i = 0; i < types.size(); i++) {
 			std::string type(types.at(i));
 			int color = ids(i);
-			assert(color >= 0);
+			assertm(color >= 0, "Illegal face color number.");
 
 			if (!type.compare(AFFINE))			{ this->_affine = color;	}
 			else if (!type.compare(PARALLEL))	{ this->_parallel = color;	}
 			else if (!type.compare(VERTICAL))	{ this->_vertical = color;	}
 			else {
-				assert(!type.compare(AFFINE) || !type.compare(PARALLEL) || !type.compare(VERTICAL));
+				assertm(!type.compare(AFFINE) || !type.compare(PARALLEL) || !type.compare(VERTICAL), "Affine, Parallel or Vertical faces types are required for the algorithm.");
 			}
 		}
 	}
@@ -196,12 +218,15 @@ public:
 	}
 };
 
-
+/*
+.	Class contains the solver functionalities by face cases.
+*/
 class PM_Solver {
+private:
 	Eigen::MatrixXi _F;
 	Eigen::MatrixXd _V, _M, _J, _N;
 
-private:
+	// Computing the Face-Affine-Matrix.
 	void _affine_matrix(const Eigen::MatrixXd& Z, const Eigen::MatrixXd& J, Eigen::MatrixXd& A) {
 		Eigen::MatrixXd ZcPinv, Zc(Z * J);
 		Utils::pseudo_inverse(Zc, ZcPinv);
@@ -221,18 +246,27 @@ public:
 	}
 	~PM_Solver() {}
 
+	/*
+	.	Computing the parallel case by Kronecker-Product between Face-Normal and the centering matrix.
+	*/
 	void parallel_face(Eigen::MatrixXd& Mi, int i) {
 		Eigen::RowVectorXd normal(this->_N.row(i));
-		Utils::kronecker_product(this->_J.transpose(), normal, Mi);
+		Utils::kronecker_product(normal, this->_J.transpose(), Mi);
 	}
 
+	/*
+	.	Computing the affine case by Kronecker-Product between the Identity-Matrix and the Face-Affine-Matrix.
+	*/
 	void affine_face(Eigen::MatrixXd& Mi, int i) {
 		Eigen::MatrixXd Z, A;
 		Utils::face_coordinates_matrix(this->_V, this->_F.row(i), Z);
 		this->_affine_matrix(Z, this->_J, A);
-		Utils::kronecker_product(A, Eigen::Matrix3d::Identity(), Mi);
+		Utils::kronecker_product(Eigen::Matrix3d::Identity(), A, Mi);
 	}
 
+	/*
+	.	Inserting solutions to the final matrix.
+	*/
 	void insert_eq(const Eigen::MatrixXd& Mi, int i) {
 		int start = this->_M.rows(), dim = this->_V.cols();
 		this->_M.conservativeResize(start + Mi.rows(), Eigen::NoChange);
@@ -244,8 +278,11 @@ public:
 		}
 	}
 
+	/*
+	.	Exploring the Max-Linear-Subspace given the Mesh topology by solving the optimization problem: 
+	.	Find -> eigenvectors((P^t) * L * P) s.t. P = I - (M^t) * ((M * (M^t))^(-1)) * M
+	*/
 	void explore_subspace(Eigen::MatrixXd& w) {
-		// Find - eigenvectors((P^t) * L * P) s.t. P = I - (M^t) * ((M * (M^t))^(-1)) * M
 
 		Eigen::MatrixXd MMt(this->_M * this->_M.transpose()), MMt_pinv;
 		Utils::pseudo_inverse(MMt, MMt_pinv);
@@ -255,7 +292,7 @@ public:
 		I.setIdentity();
 		Eigen::MatrixXd P(I - Ps);
 
-		// Laplacian
+		// Laplacian optimization for planar faces
 		Eigen::MatrixXd D, A, L;
 		Utils::degree_matrix(this->_V, this->_F, D);
 		Utils::adjacency_matrix(this->_V, this->_F, A);
@@ -267,37 +304,37 @@ public:
 };
 
 
-// By Value Function
+/*
+.	An algorithm Entry-Point.
+*/
 std::vector<Eigen::MatrixXd> realization(Eigen::MatrixXd V_, Eigen::MatrixXi F_, Eigen::VectorXi C_, std::vector<std::string> Types_, Eigen::VectorXi IDs_) {
+	// By Value Without Pointers Capabilities.
 
-	// Need an input verification and error correspondencly
 	PM_Cases cases(Types_, IDs_);
-
 	PM_Solver solver(V_, F_);
 	for (int k = 0, i = 0; i < F_.rows();i++) {
 		if (C_(i) == cases.get_affine_id()) {
 				// Affine case
-				// std::cout << "F[" << i << "] -> Affine Case" << std::endl;
 				Eigen::MatrixXd Mi;
 				solver.affine_face(Mi, i);
 				solver.insert_eq(Mi, i);
 				break;
 		} else if (C_(i) == cases.get_parallel_id()) {
 				// Parallel case
-				// std::cout << "F[" << i << "] -> Parallel Case" << std::endl;
 				Eigen::MatrixXd Mi;
 				solver.parallel_face(Mi, i);
 				solver.insert_eq(Mi, i);
 				break;
 		} else if (C_(i) == cases.get_vertical_id()) {
 				// Vertical case
-				// std::cout << "F[" << i << "] -> Vertical Case" << std::endl;
+				assertm(C_(i) == cases.get_vertical_id(), "Vertical faces types is unsupported yet.");
+				// Future-TODO: Implement the Vertical case.
 				break;
 		}
 	}
 	
 	Eigen::MatrixXd w, sol;
-	solver.explore_subspace(w);
+	solver.explore_subspace(w); // exploring the Max-Linear-Subspace into w vector.
 	
 	// Packing to return
 	std::vector<Eigen::MatrixXd> PM_space;
@@ -309,6 +346,7 @@ std::vector<Eigen::MatrixXd> realization(Eigen::MatrixXd V_, Eigen::MatrixXi F_,
 }
 
 
+// Independent function which checks if some closed shape is planar of not
 bool is_planar_shape(Eigen::MatrixXd V_, Eigen::MatrixXi F_) {
 
 	Eigen::MatrixXd N;
