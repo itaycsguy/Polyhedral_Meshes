@@ -15,12 +15,12 @@ Given a Polyhedral-Mesh, deform its vertices by reserving the Mesh-Planarity pro
 4. Open mesh_realization.blend 
 
 ## Option 2
-1. Download blender v2.81
+1. Download blender v2.81 from: [Blender v2.81](https://www.blender.org/download/releases/2-81/)
 2. Make git clone to another directory
-3. Copy planarization.pyd to the blender DLLs directory
+3. Copy Src/planarization.pyd to the blender DLLs directory
 4. cd Polyhedral_Meshes
-5. Unzip mesh_realization.zip
-6. Open mesh_realization.blend
+5. Unzip Configurations/mesh_realization.zip
+6. Open Configurations/mesh_realization.blend
 
 ## Note
 * If you change the c++ code, verify your configurations using Doc/CPP Core Using Python Interface.pdf
