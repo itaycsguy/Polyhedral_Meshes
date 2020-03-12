@@ -23,4 +23,4 @@ Given a Polyhedral-Mesh, deform its vertices by reserving the Mesh-Planarity pro
 6. Open Configurations/mesh_realization.blend
 
 ## Note
-* If you change the c++ code, verify your configurations using Doc/CPP Core Using Python Interface.pdf
+* If you change the c++ code, verify your configurations using Doc/CPP Core Using Python Interface.pdf [using Doc/CPP Core Using Python Interface.pdf](https://github.com/itaycsguy/Polyhedral_Meshes/blob/master/Doc/CPP%20Core%20Using%20Python%20Interface.pdf)
