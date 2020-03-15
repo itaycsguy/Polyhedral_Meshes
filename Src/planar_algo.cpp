@@ -2,7 +2,7 @@
 .	Names:			Dr. Roi Porrane & Mr. Itay Guy
 .	Artical:		"On Linear Spaces of Polyhedral Meshes"
 .	Artical-Link:	https://inf.ethz.ch/personal/poranner/papers/linearPM.pdf
-.	Date:			04/09/2019
+.	Date:			03/2020
 .	Version:		1.3
 */
 
@@ -13,15 +13,32 @@ namespace py = pybind11;
 
 #include <igl/cotmatrix.h>
 #include <igl/per_face_normals.h>
-#include <assert.h> 
+#include <fstream>
+#include <assert.h>
 #define assertm(exp, msg) assert(((void)msg, exp))
 
 #define AFFINE		"affine"
 #define PARALLEL	"parallel"
 #define VERTICAL	"vertical"
 
+#define ROOT		std::string("C:\\Users\\itayguy\\Desktop\\")
+#define TXT_SUFFIX	std::string(".txt")
+#define PRINT_TXT	true
+
+
 class Utils {
 public:
+	/*
+	.	Generating the Face-Specific-Coordinates as a matrix.
+	*/
+	static void print_to_file(const Eigen::MatrixXd& matrix, const std::string& name) {
+		std::ofstream file(ROOT + name + TXT_SUFFIX);
+		if (file.is_open()) {
+			file << matrix;
+		}
+		file.close();
+	}
+
 	/*
 	.	Generating the Face-Specific-Coordinates as a matrix.
 	*/
@@ -74,7 +91,7 @@ public:
 				singular_diag.coeffRef(i, i) = 1.0f / singular_diag.coeffRef(i, i);
 			}
 		}
-		y = svd.matrixU() * singular_diag * svd.matrixV().transpose();
+		y = svd.matrixU() * singular_diag * svd.matrixV();
 	}
 
 	/*
@@ -98,39 +115,23 @@ public:
 	static void eigenvectors(const Eigen::MatrixXd& x, Eigen::MatrixXd& y) {
 		Eigen::JacobiSVD<Eigen::MatrixXd> svd(x, Eigen::ComputeThinU | Eigen::ComputeThinV);
 		y = svd.matrixV();
+
+		#if PRINT_TXT
+		Utils::print_to_file(svd.matrixU(), std::string("MatrixU"));
+		Utils::print_to_file(svd.singularValues(), std::string("SingularValues"));
+		Utils::print_to_file(svd.matrixV(), std::string("MatrixV"));
+		#endif
 	}
 
 	/*
-	.	Computing Degree-Matrix of V, F.
+	.	Computing Degree-Matrix from an Adjacency-Matrix.
 	*/
-	static void degree_matrix(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::MatrixXd& D) {
-		D.resize(V.rows(), V.rows());
+	static void degree_matrix(const Eigen::MatrixXd& A, Eigen::MatrixXd& D) {
+		D.resizeLike(A);
 		D.setZero();
 
-		for (int i = 0; i < V.rows();i++) {
-			for (int j = 0; j < F.rows();j++) {
-				Eigen::VectorXi Fi(F.row(j));
-				for (int k = 0; k < Fi.size();k++) {
-					if (i == Fi(k)) {
-						int neighbor_vertex_left, neighbor_vertex_right;
-						if (k == 0) {
-							neighbor_vertex_left = Fi(Fi.size() - 1);
-							neighbor_vertex_right = Fi(k + 1);
-						}
-						else if (k == (Fi.size() - 1)) {
-							neighbor_vertex_left = Fi(k - 1);
-							neighbor_vertex_right = Fi(0);
-						}
-						else {
-							neighbor_vertex_left = Fi(k - 1);
-							neighbor_vertex_right = Fi(k + 1);
-						}
-
-						D.coeffRef(i, neighbor_vertex_left)++;
-						D.coeffRef(i, neighbor_vertex_right)++;
-					}
-				}
-			}
+		for (int i = 0; i < A.rows();i++) {
+			D.coeffRef(i, i) = A.row(i).sum();
 		}
 	}
 
@@ -141,25 +142,15 @@ public:
 		A.resize(V.rows(), V.rows());
 		A.setZero();
 
-		for (int i = 0; i < F.rows(); i++) {
-			Eigen::VectorXi Fi(F.row(i));
-			for (int j = 0; j < Fi.size(); j++) {
-				int neighbor_vertex_left, neighbor_vertex_right;
-				if (j == 0) {
-					neighbor_vertex_left = Fi(Fi.size() - 1);
-					neighbor_vertex_right = Fi(j + 1);
+		for (int i = 0; i < V.rows(); i++) {
+			for (int j = 0; j < F.rows(); j++) {
+				Eigen::VectorXi Fi(F.row(j));
+				for (int k = 0; k < Fi.size(); k++) {
+					if (i == Fi(k)) {
+						int vk = (k == (Fi.size() - 1)) ? Fi(0) : Fi(k + 1);
+						A.coeffRef(i, vk) = A.coeffRef(i, vk)++;
+					}
 				}
-				else if (j == (Fi.size() - 1)) {
-					neighbor_vertex_left = Fi(j - 1);
-					neighbor_vertex_right = Fi(0);
-				}
-				else {
-					neighbor_vertex_left = Fi(j - 1);
-					neighbor_vertex_right = Fi(j + 1);
-				}
-
-				A.coeffRef(Fi(j), neighbor_vertex_left) = 1;
-				A.coeffRef(Fi(j), neighbor_vertex_right) = 1;
 			}
 		}
 	}
@@ -171,11 +162,13 @@ public:
 		Eigen::MatrixXd laplacian(D - A);
 		L.resize(laplacian.rows() * dim, laplacian.cols() * dim);
 		L.setZero();
-		
-		for (int i = 0; i < laplacian.rows();i++) {
-			for (int j = 0; j < dim;j++) {
-				L.block(i + j + dim, j * laplacian.cols(), 1, laplacian.cols()) = laplacian.row(i);
+
+		int laplacian_idx = 0;
+		for (int i = 0; i < L.rows(); i+=dim) {
+			for (int j = 0; j < dim; j++) {
+				L.block(i + j, j * laplacian.cols(), 1, laplacian.cols()) = laplacian.row(laplacian_idx);
 			}
+			laplacian_idx++;
 		}
 	}
 };
@@ -237,7 +230,6 @@ private:
 	}
 
 public:
-	
 	PM_Solver(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F) : _V(V), _F(F) {
 		this->_M.resize(0, V.rows() * V.cols());
 
@@ -247,11 +239,10 @@ public:
 	~PM_Solver() {}
 
 	/*
-	.	Computing the parallel case by Kronecker-Product between Face-Normal and the centering matrix.
+	.	Computing the parallel case by Kronecker-Product between centering matrix and the Face-Normal.
 	*/
 	void parallel_face(Eigen::MatrixXd& Mi, int i) {
-		Eigen::RowVectorXd normal(this->_N.row(i));
-		Utils::kronecker_product(this->_J.transpose(), normal, Mi);
+		Utils::kronecker_product(this->_J.transpose(), this->_N.row(i), Mi);
 	}
 
 	/*
@@ -280,7 +271,7 @@ public:
 
 	/*
 	.	Exploring the Max-Linear-Subspace given the Mesh topology by solving the optimization problem: 
-	.	Find -> eigenvectors((P^t) * L * P) s.t. P = I - (M^t) * ((M * (M^t))^(-1)) * M
+	.	Find -> eigenvectors((P^t) * L * P / (P^t)*P) s.t. P = I - (M^t) * ((M * (M^t))^(-1)) * M
 	*/
 	void explore_subspace(Eigen::MatrixXd& w) {
 
@@ -293,13 +284,13 @@ public:
 		Eigen::MatrixXd P(I - Ps);
 
 		// Laplacian optimization for planar faces
-		Eigen::MatrixXd D, A, L;
-		Utils::degree_matrix(this->_V, this->_F, D);
+		Eigen::MatrixXd A, D, L;
 		Utils::adjacency_matrix(this->_V, this->_F, A);
+		Utils::degree_matrix(A, D);
 		Utils::laplacian_matrix(D, A, L, this->_V.cols());
 
-		Eigen::MatrixXd objective(P.transpose() * L * P);
-		Utils::eigenvectors(objective, w);
+		Eigen::MatrixXd objective(P.transpose() * L * P), objective_norm_pinv((P.transpose() * P).inverse());
+		Utils::eigenvectors(objective * objective_norm_pinv, w);
 	}
 };
 
@@ -312,24 +303,24 @@ std::vector<Eigen::MatrixXd> realization(Eigen::MatrixXd V_, Eigen::MatrixXi F_,
 
 	PM_Cases cases(Types_, IDs_);
 	PM_Solver solver(V_, F_);
-	for (int k = 0, i = 0; i < F_.rows();i++) {
+	for (int i = 0; i < F_.rows();i++) {
 		if (C_(i) == cases.get_affine_id()) {
-				// Affine case
-				Eigen::MatrixXd Mi;
-				solver.affine_face(Mi, i);
-				solver.insert_eq(Mi, i);
-				break;
+			// Affine case
+			Eigen::MatrixXd Mi;
+			solver.affine_face(Mi, i);
+			solver.insert_eq(Mi, i);
+
 		} else if (C_(i) == cases.get_parallel_id()) {
-				// Parallel case
-				Eigen::MatrixXd Mi;
-				solver.parallel_face(Mi, i);
-				solver.insert_eq(Mi, i);
-				break;
+			// Parallel case
+			Eigen::MatrixXd Mi;
+			solver.parallel_face(Mi, i);
+			solver.insert_eq(Mi, i);
+
 		} else if (C_(i) == cases.get_vertical_id()) {
-				// Vertical case
-				assertm(C_(i) == cases.get_vertical_id(), "Vertical faces types is unsupported yet.");
-				// Future-TODO: Implement the Vertical case.
-				break;
+			// Vertical case
+			assertm(C_(i) == cases.get_vertical_id(), "Vertical faces type is unsupported yet.");
+			// Future-TODO: Implement the Vertical case.
+
 		}
 	}
 	

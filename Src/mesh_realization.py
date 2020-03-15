@@ -2,9 +2,9 @@ import bpy
 import numpy as np
 
 bl_info = {
-    "name": "Mesh Realization",
-    "blender": (2, 80, 0),
-    "category": "Object",	
+    "name": "Mesh Realization", 
+    "blender": (2, 80, 0), 
+    "category": "Object", 	
 }
 
 REMOVE_MODE = False
@@ -12,7 +12,7 @@ REMOVE_ALL = False
 REMOVE_OUTTER_COLLECTIONS = False
 CONDITIONAL_REMOVAL = []
 
-class Blender_Adapter:	
+class Blender_Adapter:
 	
 	@staticmethod
 	def remove_handler(remove_all, remove_outter_collections, conditional_removal):		
@@ -170,7 +170,7 @@ class Blender_Adapter:
 	@staticmethod
 	def set_obj_vertices(target, source, dim=3):
 		for k in range(dim):
-			target.co[k] = source[k]
+			target.co[k] = source[k] + target.co[k]
 		
 
 	'''
@@ -286,11 +286,11 @@ class OBJECT_OT_realization(bpy.types.Operator):
 				if color in target_name:
 					return color
 				
-		def _get_corrected_vertices(V):
-			V_arr = np.zeros(len(V)).tolist()
-			for vi, vv in V.items():
-				V_arr[vi] = vv
-			return V_arr
+		def _get_corrected_vertices(V_hash):
+			V = list()
+			for i in range(len(V_hash.keys())):
+				V.append(V_hash[i])
+			return np.asarray(V, dtype=np.float64)
 
 		V, F, C = {}, list(), list()
 		class_colors = self.FACES_COLOR.keys()
@@ -303,8 +303,8 @@ class OBJECT_OT_realization(bpy.types.Operator):
 			for idx in Blender_Adapter.get_face_vertices(face):
 				vertex = vertices[idx]
 				vertex_index = Blender_Adapter.get_vertex_index(vertex)
-				V[vertex_index] = Blender_Adapter.get_vertex_coordinates(vertex, self.SPACE_DIM)
 				Fi.append(vertex_index)
+				V[vertex_index] = Blender_Adapter.get_vertex_coordinates(vertex, self.SPACE_DIM)
 				
 			F.append(Fi)
 	        
@@ -365,9 +365,9 @@ class OBJECT_OT_realization(bpy.types.Operator):
 				Blender_Adapter.set_obj_vertices(curr_v, v, self.SPACE_DIM)
 			Blender_Adapter.link_obj(eigen_shape)
 			eigen_shapes.append(eigen_shape)
-			x_gap += self.X_GAP
-			y_gap += self.Y_GAP
-			z_gap += self.Z_GAP
+			#x_gap += self.X_GAP
+			#y_gap += self.Y_GAP
+			#z_gap += self.Z_GAP
 		Blender_Adapter.add_basis_shape_key(obj, eigen_shapes)
 		Blender_Adapter.add_keyframes(Blender_Adapter.get_obj_name(obj), self.PRODUCED_SHAPE_NAME)
 		
@@ -387,9 +387,10 @@ class OBJECT_OT_realization(bpy.types.Operator):
 			V, F, C, TYPES, IDS = self._preprocessing(obj)
 
 			import planarization as plnr
-#			assert plnr.is_planar_shape(V, F), '{} is not planar.'.format(obj.name)
-#			print('{} is planar.'.format(obj.name))
-				
+			assert plnr.is_planar_shape(V, F), '{} is not planar.'.format(obj.name)
+			print('{} is planar.'.format(obj.name))
+			plnr.realization(V, F, C, TYPES, IDS)
+			
 			Vco_news = self._parse_vertices(plnr.realization(V, F, C, TYPES, IDS))
 			self._gen_PM_shapes(obj, Vco_news)
 
